@@ -21,8 +21,8 @@ spec:
     spec:
       containers:
         - name: estadisticas-service
-          # Reemplaza <ACCOUNT_ID> y <REGION> por los de tu cuenta AWS Academy
-          image: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/estadisticas-service:latest
+          # Reemplaza 843084666157 y us-east-1 por los de tu cuenta AWS Academy
+          image: 843084666157.dkr.ecr.us-east-1.amazonaws.com/estadisticas-service:latest
           ports:
             - containerPort: 8006
           env:
