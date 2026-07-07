@@ -1,0 +1,57 @@
+# ============================================================
+# CI/CD  estadisticas-service :  build -> push ECR -> deploy EKS
+# Se dispara con push a la rama "deploy".
+# Credenciales temporales de AWS Academy via GitHub Secrets (expiran ~4h).
+# ============================================================
+name: deploy-estadisticas-service
+
+on:
+  push:
+    branches: [ deploy ]
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  EKS_CLUSTER: ${{ secrets.EKS_CLUSTER }}
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciales AWS (temporales, AWS Academy)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login en Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag y push de la imagen (3 tags simultáneos)
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # vX.Y.Z: lee la versión de un archivo VERSION si existe, si no usa 1.0.0
+          VERSION=$(cat VERSION 2>/dev/null || echo "1.0.0")
+          IMG="$REGISTRY/$ECR_REPOSITORY"
+          docker build -t "$IMG:$IMAGE_TAG" -t "$IMG:latest" -t "$IMG:v$VERSION" .
+          docker push "$IMG:$IMAGE_TAG"
+          docker push "$IMG:latest"
+          docker push "$IMG:v$VERSION"
+          echo "IMG=$IMG" >> $GITHUB_ENV
+
+      - name: Configurar kubeconfig para EKS
+        run: aws eks update-kubeconfig --name "$EKS_CLUSTER" --region "$AWS_REGION"
+
+      - name: Desplegar en EKS (rolling update)
+        run: |
+          kubectl set image deployment/estadisticas-service \
+            estadisticas-service=$IMG:${{ github.sha }} --record
+          kubectl rollout status deployment/estadisticas-service --timeout=120s
